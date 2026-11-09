@@ -14,6 +14,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Telephony
 import androidx.core.app.NotificationCompat
@@ -38,6 +39,7 @@ class PaymentMonitorService : Service() {
     private var smsReceiver: SmsReceiver? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var retryJob: Job? = null
+    private var keepAwakeLock: PowerManager.WakeLock? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
 
     companion object {
@@ -50,7 +52,7 @@ class PaymentMonitorService : Service() {
 
         private const val RESTART_REQUEST_CODE = 1001
         private const val RESTART_DELAY_MS = 1500L
-        private const val WATCHDOG_DELAY_MS = 5 * 60 * 1000L
+        private const val WATCHDOG_DELAY_MS = 3 * 60 * 1000L
         private const val RETRY_INTERVAL_MS = 15_000L
 
         fun start(context: Context) {
@@ -109,11 +111,20 @@ class PaymentMonitorService : Service() {
             try {
                 val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 val pendingIntent = restartPendingIntent(context)
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    SystemClock.elapsedRealtime() + WATCHDOG_DELAY_MS,
-                    pendingIntent
-                )
+                val triggerAt = SystemClock.elapsedRealtime() + WATCHDOG_DELAY_MS
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerAt,
+                        pendingIntent
+                    )
+                } catch (_: SecurityException) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerAt,
+                        pendingIntent
+                    )
+                }
             } catch (_: Exception) { }
         }
 
@@ -192,7 +203,28 @@ class PaymentMonitorService : Service() {
         } catch (_: Exception) { }
     }
 
+    /** Keeps the CPU awake while the screen is off so SMS/notifications are handled instantly. */
+    private fun acquireKeepAwake() {
+        try {
+            if (keepAwakeLock?.isHeld == true) return
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PaymentBridge:keepawake")
+            wl.setReferenceCounted(false)
+            wl.acquire()
+            keepAwakeLock = wl
+        } catch (_: Exception) { }
+    }
+
+    private fun releaseKeepAwake() {
+        try {
+            val wl = keepAwakeLock
+            if (wl != null && wl.isHeld) wl.release()
+        } catch (_: Exception) { }
+        keepAwakeLock = null
+    }
+
     private fun unregisterNetworkCallback() {
+        releaseKeepAwake()
         try {
             val cb = netCallback
             if (cb != null) {
@@ -223,8 +255,25 @@ class PaymentMonitorService : Service() {
     private fun startRetryLoop() {
         if (retryJob?.isActive == true) return
         retryJob = scope.launch {
+            var lastTick = System.currentTimeMillis()
+            var rounds = 0
             while (isActive) {
                 try {
+                    val now = System.currentTimeMillis()
+                    if (now - lastTick > 60_000L) {
+                        LogManager.add(
+                            applicationContext,
+                            "WARN",
+                            "⏸ Phone paused this app for ${(now - lastTick) / 1000}s — check battery / auto-start settings"
+                        )
+                        SmsScanner.scanRecent(applicationContext)
+                    }
+                    lastTick = now
+                    rounds++
+                    if (rounds % 4 == 0) {
+                        SmsScanner.scanRecent(applicationContext)
+                    }
+
                     if (Prefs.isMonitoringEnabled(applicationContext) &&
                         PaymentQueue.pendingCount(applicationContext) > 0
                     ) {
@@ -251,6 +300,8 @@ class PaymentMonitorService : Service() {
         registerNetworkCallback()
         startRetryLoop()
         scheduleWatchdog(this)
+        acquireKeepAwake()
+        scope.launch { SmsScanner.scanRecent(applicationContext) }
         kickFlush()
     }
 
