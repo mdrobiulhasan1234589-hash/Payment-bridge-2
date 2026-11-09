@@ -1,0 +1,40 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download Gradle 8.7
+        run: |
+          cd $HOME
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip -q gradle-8.7-bin.zip
+          echo "$HOME/gradle-8.7/bin" >> $GITHUB_PATH
+
+      - name: Verify Gradle
+        run: gradle --version
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaymentBridge-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
