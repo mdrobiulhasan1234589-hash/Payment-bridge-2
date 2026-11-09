@@ -475,6 +475,34 @@ class MainActivity : AppCompatActivity() {
         showToast("Enable Auto-start / Background activity / No restrictions for this app")
     }
 
+    private fun canExactAlarms(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val am = getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+                am.canScheduleExactAlarms()
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    private fun openExactAlarmSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            openAppDetails()
+        }
+    }
+
     private fun addCheckRow(
         container: LinearLayout,
         title: String,
@@ -537,6 +565,15 @@ class MainActivity : AppCompatActivity() {
             Prefs.getBackendUrl(this).isNotBlank() && Prefs.getBridgeSecret(this).isNotBlank(),
             "SET"
         ) { showSettingsDialog() }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            addCheckRow(
+                container,
+                "8. Alarms & reminders permission (lets Android restart the app if the phone kills it)",
+                canExactAlarms(),
+                "ALLOW"
+            ) { openExactAlarmSettings() }
+        }
 
         val tip = TextView(this)
         tip.text = "Tip: Recent apps e Payment Bridge ke lock (🔒) koro. App swipe kore close korle o kaj korbe, ar screen off e o payment push hobe."
