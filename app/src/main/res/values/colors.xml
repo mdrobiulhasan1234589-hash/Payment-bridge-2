@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_primary">#05050F</color>
+    <color name="bg_card">#0A0A1A</color>
+    <color name="bg_card_inner">#10123A</color>
+
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#8A95C9</color>
+    <color name="text_muted">#5573FF</color>
+
+    <color name="accent_blue">#3355FF</color>
+    <color name="accent_blue_dark">#000D80</color>
+    <color name="accent_purple">#A855F7</color>
+
+    <color name="status_ok">#4CAF50</color>
+    <color name="status_error">#FF5252</color>
+    <color name="status_warn">#FFC107</color>
+
+    <color name="border_blue">#3355FF</color>
+    <color name="divider">#1A1D3A</color>
+</resources>
